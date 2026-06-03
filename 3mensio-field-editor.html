@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3mensio Report Field Editor</title>
+
+  <!-- pdf-lib for PDF modification -->
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <!-- pdf.js for text coordinate extraction only (no preview) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <!-- JSZip for batch ZIP download -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f4f6f9;
+      --card: #ffffff;
+      --border: #dde1e8;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-light: #eff6ff;
+      --text: #1e293b;
+      --muted: #64748b;
+      --success: #16a34a;
+      --error: #dc2626;
+      --warning: #d97706;
+      --radius: 8px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px 16px;
+    }
+
+    .wrapper {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    /* ── Header ── */
+    header {
+      margin-bottom: 24px;
+    }
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    header p {
+      margin-top: 4px;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+    .privacy-note {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 8px;
+      font-size: 0.75rem;
+      color: var(--success);
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 4px;
+      padding: 3px 8px;
+    }
+    .privacy-note svg { flex-shrink: 0; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+
+    /* ── Upload zone ── */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--accent);
+      background: var(--accent-light);
+    }
+    .upload-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+    .upload-icon {
+      width: 40px;
+      height: 40px;
+      margin: 0 auto 10px;
+      color: var(--muted);
+    }
+    .upload-zone p { font-size: 0.875rem; color: var(--muted); }
+    .upload-zone strong { color: var(--accent); }
+    .upload-zone .file-name {
+      margin-top: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--success);
+    }
+
+    /* ── File list (batch) ── */
+    #file-list {
+      margin-top: 12px;
+      display: none;
+    }
+    .file-list-header {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      margin-bottom: 4px;
+      font-size: 0.82rem;
+    }
+    .file-item .fi-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+    .file-item .fi-size { color: var(--muted); font-size: 0.75rem; flex-shrink: 0; }
+    .file-item .fi-status { font-size: 0.75rem; font-weight: 600; flex-shrink: 0; min-width: 70px; text-align: right; }
+    .fi-status.pending  { color: var(--muted); }
+    .fi-status.done     { color: var(--success); }
+    .fi-status.error    { color: var(--error); }
+    .fi-status.working  { color: var(--accent); }
+
+    /* ── Fields grid ── */
+    .fields-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 560px) {
+      .fields-grid { grid-template-columns: 1fr; }
+    }
+    .field-group label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .field-group input {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.9rem;
+      color: var(--text);
+      background: var(--card);
+      transition: border-color 0.15s, box-shadow 0.15s;
+      outline: none;
+    }
+    .field-group input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+    }
+    .field-group input::placeholder { color: #aab1bf; }
+
+    /* ── Generate button ── */
+    .btn-generate {
+      width: 100%;
+      padding: 12px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .btn-generate:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-generate:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    /* ── Status messages ── */
+    #status {
+      margin-top: 12px;
+      font-size: 0.85rem;
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: none;
+    }
+    #status.info    { background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; display:block; }
+    #status.success { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; display:block; }
+    #status.error   { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; display:block; }
+    #status.warning { background:#fffbeb; color:#92400e; border:1px solid #fde68a; display:block; }
+
+
+    /* ── Calibration toggle (advanced, hidden by default) ── */
+    #calib-toggle {
+      font-size: 0.72rem;
+      color: var(--muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-decoration: underline;
+      margin-top: 10px;
+      padding: 0;
+    }
+    #calib-panel {
+      display: none;
+      margin-top: 12px;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px;
+    }
+    #calib-panel p {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 10px;
+      line-height: 1.5;
+    }
+    .calib-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+    @media (max-width: 560px) {
+      .calib-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    .calib-group label {
+      display: block;
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-bottom: 3px;
+    }
+    .calib-group input {
+      width: 100%;
+      padding: 5px 7px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-family: monospace;
+      color: var(--text);
+    }
+    .calib-fieldname {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text);
+      grid-column: 1/-1;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    .calib-fieldname:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+    .btn-calib-reset {
+      margin-top: 10px;
+      font-size: 0.75rem;
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+      color: var(--text);
+    }
+    .btn-calib-reset:hover { background: var(--bg); }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <header>
+    <h1>3mensio Report Field Editor</h1>
+    <p>Upload a report, enter replacement details, and generate an updated PDF.</p>
+    <span class="privacy-note">
+      <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor">
+        <path fill-rule="evenodd" d="M10 1a9 9 0 100 18A9 9 0 0010 1zm0 2a7 7 0 110 14A7 7 0 0110 3zm-.75 3.75a.75.75 0 011.5 0v4a.75.75 0 01-1.5 0v-4zm.75 7a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
+      </svg>
+      PDF processing happens locally in your browser — no data is uploaded to any server.
+    </span>
+  </header>
+
+  <!-- Upload -->
+  <div class="card">
+    <div class="card-title">Step 1 — Upload Reports (1 or more PDFs)</div>
+    <div class="upload-zone" id="upload-zone">
+      <input type="file" id="pdf-input" accept="application/pdf" multiple />
+      <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+      </svg>
+      <p><strong>Click to choose</strong> or drag &amp; drop — select multiple PDFs for batch processing</p>
+      <div class="file-name" id="file-name-display"></div>
+    </div>
+    <div id="file-list">
+      <div class="file-list-header" id="file-list-header"></div>
+      <div id="file-items"></div>
+    </div>
+  </div>
+
+  <!-- Fields -->
+  <div class="card">
+    <div class="card-title">Step 2 — Enter New Field Values</div>
+    <div class="fields-grid">
+      <div class="field-group">
+        <label for="inp-physician">Physician</label>
+        <input id="inp-physician" type="text" placeholder="e.g. Dr. Smith" autocomplete="off" />
+      </div>
+      <div class="field-group">
+        <label for="inp-hospital">Hospital</label>
+        <input id="inp-hospital" type="text" placeholder="e.g. City Medical Center" autocomplete="off" />
+      </div>
+      <div class="field-group">
+        <label for="inp-city">City</label>
+        <input id="inp-city" type="text" placeholder="e.g. Berlin" autocomplete="off" />
+      </div>
+      <div class="field-group">
+        <label for="inp-country">Country</label>
+        <input id="inp-country" type="text" placeholder="e.g. Germany" autocomplete="off" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Generate -->
+  <div class="card">
+    <div class="card-title">Step 3 — Generate</div>
+    <button class="btn-generate" id="btn-generate" disabled>Generate &amp; Download ZIP</button>
+    <div id="status"></div>
+
+    <!-- Coordinate calibration (advanced) -->
+    <button id="calib-toggle">Advanced: adjust field coordinates</button>
+    <div id="calib-panel">
+      <p>
+        These are the fixed PDF coordinates (in points, A4 reference 595.28 × 841.89) used to
+        cover and replace each field value. Adjust only if the white boxes don't align with your
+        specific report version. All values use the PDF bottom-left origin.
+      </p>
+      <div id="calib-fields-ui"></div>
+      <button class="btn-calib-reset" id="btn-calib-reset">Reset to defaults</button>
+    </div>
+  </div>
+
+
+</div><!-- /wrapper -->
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// FIELD LAYOUT
+// Coordinates are in PDF points using bottom-left origin.
+// Reference page size: A4 = 595.28 × 841.89 pt.
+// These cover the VALUE area only (right of the label colon).
+// Measured from a typical 3mensio structural/TAVI report, page 1, top-right
+// "Report Details" block.
+//
+// To calibrate for your report:
+//   1. Open the Advanced section above.
+//   2. Adjust x / y / width / height for each field.
+//   3. x = left edge of value text, y = bottom edge of value text row.
+//      width should be wide enough to cover the longest expected value.
+//      height = row height (≈ font size + small padding).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COORDINATE NOTES (from observed 3mensio report layout):
+//
+//  Page: A4 portrait 595.28 × 841.89 pt, origin = bottom-left
+//
+//  The right-side "Report Details" block has four value cells.
+//  Layout (top → bottom visually = high → low y in PDF coords):
+//
+//    "Report Details" bar   ≈ y 800–815
+//    Physician value row    ≈ y 754–763
+//    Hospital value row     ≈ y 741–750
+//    City value row         ≈ y 728–737
+//    Country value row      ≈ y 715–724
+//
+//  Value text starts after the label colon at ≈ x 395.
+//  Width 185 pt covers names up to ~"UPD Losinoostrovskay".
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// COORDINATE NOTES — derived from actual PDF (portrait A4, 595.28 × 841.89 pt):
+//  The Report Details right-column values all start at x ≈ 441 pt.
+//  Row spacing ≈ 13 pt.  Width 150 pt covers long hospital names.
+//  Origin = bottom-left (PDF convention).
+// ─────────────────────────────────────────────────────────────────────────────
+const DEFAULT_LAYOUT = {
+  referenceWidth:  595.28,   // A4 portrait
+  referenceHeight: 841.89,
+  fontSize: 8.5,
+  fields: {
+    physician: { x: 428, y: 753, width: 158, height: 20 },
+    hospital:  { x: 428, y: 740, width: 158, height: 20 },
+    city:      { x: 428, y: 727, width: 158, height: 20 },
+    country:   { x: 428, y: 714, width: 158, height: 20 },
+  }
+};
+
+// Working copy — can be modified via the calibration UI
+let LAYOUT = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
+
+// ── State ─────────────────────────────────────────────────────────────────────
+// uploadedFiles: array of { file: File, buffer: ArrayBuffer }
+let uploadedFiles = [];
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const pdfInput         = document.getElementById('pdf-input');
+const uploadZone       = document.getElementById('upload-zone');
+const fileNameDisplay  = document.getElementById('file-name-display');
+const btnGenerate      = document.getElementById('btn-generate');
+const statusEl         = document.getElementById('status');
+const calibToggle      = document.getElementById('calib-toggle');
+const calibPanel       = document.getElementById('calib-panel');
+const calibFieldsUi    = document.getElementById('calib-fields-ui');
+const btnCalibReset    = document.getElementById('btn-calib-reset');
+
+// ── pdf.js worker (text extraction only, no preview) ─────────────────────────
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function setStatus(msg, type) {
+  // type: 'info' | 'success' | 'error' | 'warning'
+  statusEl.textContent = msg;
+  statusEl.className = type || 'info';
+}
+function clearStatus() {
+  statusEl.textContent = '';
+  statusEl.className = '';
+  statusEl.style.display = 'none';
+}
+
+function buildCalibUI() {
+  const fieldKeys = ['physician', 'hospital', 'city', 'country'];
+  const labels    = { physician:'Physician', hospital:'Hospital', city:'City', country:'Country' };
+  const props     = ['x', 'y', 'width', 'height'];
+
+  calibFieldsUi.innerHTML = '';
+  fieldKeys.forEach(key => {
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'calib-fieldname';
+    nameDiv.textContent = labels[key];
+    calibFieldsUi.appendChild(nameDiv);
+
+    const grid = document.createElement('div');
+    grid.className = 'calib-grid';
+    props.forEach(prop => {
+      const g = document.createElement('div');
+      g.className = 'calib-group';
+      const lbl = document.createElement('label');
+      lbl.textContent = prop;
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.step = '0.5';
+      inp.value = LAYOUT.fields[key][prop];
+      inp.dataset.field = key;
+      inp.dataset.prop = prop;
+      inp.addEventListener('input', e => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v)) {
+          LAYOUT.fields[e.target.dataset.field][e.target.dataset.prop] = v;
+        }
+      });
+      g.appendChild(lbl);
+      g.appendChild(inp);
+      grid.appendChild(g);
+    });
+    calibFieldsUi.appendChild(grid);
+  });
+}
+
+function resetCalib() {
+  LAYOUT = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
+  buildCalibUI();
+}
+
+// ── Upload handling ────────────────────────────────────────────────────────────
+const fileListEl      = document.getElementById('file-list');
+const fileItemsEl     = document.getElementById('file-items');
+const fileListHeader  = document.getElementById('file-list-header');
+
+async function handleFiles(fileList) {
+  const pdfs = Array.from(fileList).filter(f => f.type === 'application/pdf');
+  if (!pdfs.length) {
+    setStatus('Please select valid PDF file(s).', 'error');
+    return;
+  }
+
+  // Skip files already in the list (match by name + size to avoid duplicates)
+  const existing = new Set(uploadedFiles.map(u => u.file.name + '_' + u.file.size));
+  const newPdfs  = pdfs.filter(f => !existing.has(f.name + '_' + f.size));
+
+  if (!newPdfs.length) {
+    setStatus('All selected files are already in the list.', 'warning');
+    return;
+  }
+
+  fileListEl.style.display = 'block';
+  fileNameDisplay.textContent = '';
+  btnGenerate.disabled = true;
+  setStatus('Reading files…', 'info');
+
+  for (const file of newPdfs) {
+    const row = document.createElement('div');
+    row.className = 'file-item';
+    row.innerHTML = `
+      <span class="fi-name">${file.name}</span>
+      <span class="fi-size">${(file.size / 1024).toFixed(0)} KB</span>
+      <span class="fi-status pending" id="fi-${file.name.replace(/\W/g,'_')}">Waiting</span>`;
+    fileItemsEl.appendChild(row);
+
+    try {
+      const buffer = await file.arrayBuffer();
+      uploadedFiles.push({ file, buffer });
+    } catch (err) {
+      setStatus(`Failed to read ${file.name}: ${err.message}`, 'error');
+    }
+  }
+
+  const total = uploadedFiles.length;
+  fileListHeader.textContent = `${total} file${total > 1 ? 's' : ''} selected`;
+  const label = total === 1 ? 'Generate & Download PDF' : `Generate & Download ZIP (${total} files)`;
+  btnGenerate.textContent = label;
+  btnGenerate.disabled = false;
+  setStatus(`${total} file(s) ready — enter values and click Generate.`, 'success');
+}
+
+pdfInput.addEventListener('change', e => {
+  if (e.target.files.length) handleFiles(e.target.files);
+});
+
+[uploadZone, pdfInput].forEach(el => {
+  el.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); uploadZone.classList.add('dragover'); });
+  el.addEventListener('dragleave', e => { e.stopPropagation(); uploadZone.classList.remove('dragover'); });
+  el.addEventListener('drop', e => {
+    e.preventDefault(); e.stopPropagation();
+    uploadZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+  });
+});
+
+
+// ── Calibration panel toggle ───────────────────────────────────────────────────
+calibToggle.addEventListener('click', () => {
+  const open = calibPanel.style.display === 'block';
+  calibPanel.style.display = open ? 'none' : 'block';
+  calibToggle.textContent  = open
+    ? 'Advanced: adjust field coordinates'
+    : 'Advanced: hide coordinate editor';
+  if (!open) buildCalibUI();
+});
+btnCalibReset.addEventListener('click', resetCalib);
+
+// ── Core PDF processing — processes ONE file and returns the updated bytes ─────
+async function processOnePdf(arrayBuffer, physician, hospital, city, country) {
+  const { PDFDocument, rgb, StandardFonts } = PDFLib;
+
+  const VALUE_MASK_X  = 425;
+  const VALUE_TEXT_X  = 428;
+  const VALUE_WIDTH   = 162;
+  const VALUE_RECT_H  = 12;
+  const FONT_SIZE_REF = 8.5;
+
+  const pdfDoc = await PDFDocument.load(arrayBuffer.slice(0));
+  const pages  = pdfDoc.getPages();
+  if (!pages.length) throw new Error('The PDF has no pages.');
+
+  const firstPage = pages[0];
+  const { width: pageWidth, height: pageHeight } = firstPage.getSize();
+  const scaleX = pageWidth  / LAYOUT.referenceWidth;
+  const scaleY = pageHeight / LAYOUT.referenceHeight;
+  const font   = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+  const LABEL_KEYS = ['physician','hospital','city','country'];
+  const LABEL_VARIANTS = {
+    physician: ['Physician:', 'Physician'],
+    hospital:  ['Hospital:',  'Hospital'],
+    city:      ['City:',      'City'],
+    country:   ['Country:',   'Country'],
+  };
+
+  const fallbackY = {
+    physician: LAYOUT.fields.physician.y * scaleY,
+    hospital:  LAYOUT.fields.hospital.y  * scaleY,
+    city:      LAYOUT.fields.city.y      * scaleY,
+    country:   LAYOUT.fields.country.y   * scaleY,
+  };
+
+  let detectedY = { ...fallbackY };
+  try {
+    const pdfJS   = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer.slice(0)) }).promise;
+    const pjsPage = await pdfJS.getPage(1);
+    const tc      = await pjsPage.getTextContent();
+    const items   = tc.items
+      .filter(it => it.str && it.str.trim())
+      .map(it => ({ text: it.str.trim(), y: it.transform[5] }));
+    for (const key of LABEL_KEYS) {
+      for (const variant of LABEL_VARIANTS[key]) {
+        const lbl = items.find(it => it.text === variant);
+        if (lbl) { detectedY[key] = lbl.y; break; }
+      }
+    }
+  } catch (_) { /* keep fallback y */ }
+
+  const scaledMaskX  = VALUE_MASK_X  * scaleX;
+  const scaledTextX  = VALUE_TEXT_X  * scaleX;
+  const scaledWidth  = VALUE_WIDTH   * scaleX;
+  const scaledHeight = VALUE_RECT_H  * scaleY;
+
+  const fieldRects = {};
+  for (const key of LABEL_KEYS) {
+    const baseline = detectedY[key];
+    fieldRects[key] = {
+      maskX: scaledMaskX, textX: scaledTextX,
+      y: baseline - 3, baseline,
+      width: scaledWidth, height: scaledHeight,
+    };
+  }
+
+  const replacementFields = [
+    { key: 'physician', value: physician },
+    { key: 'hospital',  value: hospital  },
+    { key: 'city',      value: city      },
+    { key: 'country',   value: country   },
+  ];
+
+  function calcFontSize(text, availW) {
+    let size = FONT_SIZE_REF * Math.min(scaleX, scaleY);
+    while (size > 5 && font.widthOfTextAtSize(text, size) > availW) size -= 0.5;
+    return size;
+  }
+
+  for (const field of replacementFields) {
+    const r = fieldRects[field.key];
+    firstPage.drawRectangle({ x: r.maskX, y: r.y, width: r.width, height: r.height, color: rgb(1,1,1), borderWidth: 0 });
+  }
+  for (const field of replacementFields) {
+    const r        = fieldRects[field.key];
+    const availW   = r.width - (scaledTextX - scaledMaskX) - 2;
+    const fontSize = calcFontSize(field.value, availW);
+    firstPage.drawText(field.value, { x: r.textX, y: r.baseline, size: fontSize, font, color: rgb(0,0,0) });
+  }
+
+  return await pdfDoc.save();
+}
+
+// ── Generate ───────────────────────────────────────────────────────────────────
+btnGenerate.addEventListener('click', async () => {
+  if (!uploadedFiles.length) {
+    setStatus('No PDF uploaded. Please upload at least one 3mensio report.', 'error');
+    return;
+  }
+  const physician = document.getElementById('inp-physician').value.trim();
+  const hospital  = document.getElementById('inp-hospital').value.trim();
+  const city      = document.getElementById('inp-city').value.trim();
+  const country   = document.getElementById('inp-country').value.trim();
+
+  if (!physician || !hospital || !city || !country) {
+    setStatus('All four fields (Physician, Hospital, City, Country) are required.', 'error');
+    return;
+  }
+
+  btnGenerate.disabled = true;
+  const zip = new JSZip();
+  let successCount = 0;
+
+  for (let i = 0; i < uploadedFiles.length; i++) {
+    const { file, buffer } = uploadedFiles[i];
+    const safeId     = file.name.replace(/\W/g, '_');
+    const statusSpan = document.getElementById('fi-' + safeId);
+    if (statusSpan) { statusSpan.className = 'fi-status working'; statusSpan.textContent = 'Processing…'; }
+    setStatus(`Processing ${i + 1} of ${uploadedFiles.length}: ${file.name}`, 'info');
+
+    try {
+      const pdfBytes = await processOnePdf(buffer, physician, hospital, city, country);
+      const outName  = file.name.replace(/\.pdf$/i, '') + '_updated.pdf';
+      zip.file(outName, pdfBytes);
+      successCount++;
+      if (statusSpan) { statusSpan.className = 'fi-status done'; statusSpan.textContent = '✓ Done'; }
+    } catch (err) {
+      if (statusSpan) { statusSpan.className = 'fi-status error'; statusSpan.textContent = '✗ Error'; }
+      console.error('Error processing ' + file.name, err);
+    }
+  }
+
+  if (successCount === 0) {
+    setStatus('All files failed to process.', 'error');
+    btnGenerate.disabled = false;
+    return;
+  }
+
+  // Single file → download as PDF directly; multiple files → ZIP
+  try {
+    if (uploadedFiles.length === 1) {
+      const singleName = uploadedFiles[0].file.name.replace(/\.pdf$/i, '') + '_updated.pdf';
+      const files = Object.keys(zip.files);
+      const pdfData = await zip.files[files[0]].async('uint8array');
+      const blob = new Blob([pdfData], { type: 'application/pdf' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = singleName;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setStatus(`Done! Updated PDF downloaded: ${singleName}`, 'success');
+    } else {
+      setStatus('Creating ZIP…', 'info');
+      const zipBlob  = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      const url      = URL.createObjectURL(zipBlob);
+      const a        = document.createElement('a');
+      a.href = url; a.download = `3mensio_updated_${successCount}files.zip`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setStatus(`Done! ${successCount} of ${uploadedFiles.length} PDFs updated — downloaded as ZIP.`, 'success');
+    }
+  } catch (err) {
+    setStatus('Download failed: ' + err.message, 'error');
+  }
+
+  btnGenerate.disabled = false;
+});
+</script>
+</body>
+</html>

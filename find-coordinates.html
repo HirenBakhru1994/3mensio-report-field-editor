@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>PDF Coordinate Finder</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    body { font-family: monospace; background: #0f172a; color: #e2e8f0; padding: 20px; }
+    h2 { color: #7dd3fc; }
+    input[type=file] { margin: 12px 0; display: block; }
+    table { border-collapse: collapse; width: 100%; margin-top: 16px; font-size: 13px; }
+    th { background: #1e3a5f; color: #7dd3fc; padding: 6px 10px; text-align: left; border: 1px solid #334155; }
+    td { padding: 5px 10px; border: 1px solid #1e293b; }
+    tr.highlight { background: #1a3a1a; color: #86efac; font-weight: bold; }
+    tr:hover { background: #1e293b; }
+    .info { color: #94a3b8; font-size: 12px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+<h2>PDF Text Coordinate Extractor — Page 1</h2>
+<p class="info">Upload the 3mensio PDF. It will list every text item on page 1 with its exact PDF x/y coordinates.<br>
+Rows matching Physician/Hospital/City/Country values are highlighted in green.</p>
+<input type="file" id="pdfFile" accept="application/pdf"/>
+<div id="output"></div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const targets = ['Dr. Katsimagklis','Katsimagklis','Navy Athens Hospital','Athens','Greece'];
+
+document.getElementById('pdfFile').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data: new Uint8Array(buf)}).promise;
+  const page = await pdf.getPage(1);
+  const viewport = page.getViewport({scale: 1});
+  const pageH = viewport.height;
+  const textContent = await page.getTextContent();
+
+  let html = `<p class="info">Page size: ${viewport.width.toFixed(2)} × ${pageH.toFixed(2)} pt &nbsp;|&nbsp; ${textContent.items.length} text items</p>`;
+  html += `<table><tr><th>#</th><th>Text</th><th>x (pdf-lib)</th><th>y (pdf-lib)</th><th>width</th><th>height</th></tr>`;
+
+  textContent.items.forEach((item, i) => {
+    if (!item.str || !item.str.trim()) return;
+    // pdf.js transform: [scaleX, skewX, skewY, scaleY, tx, ty]
+    // tx, ty are in pdf.js coords (y from bottom of viewport = same as pdf-lib y)
+    const tx = item.transform[4];
+    const ty = item.transform[5];
+    const w  = item.width;
+    const h  = item.height;
+    const isTarget = targets.some(t => item.str.includes(t));
+    html += `<tr class="${isTarget ? 'highlight' : ''}">
+      <td>${i}</td>
+      <td>${item.str.replace(/</g,'&lt;')}</td>
+      <td>${tx.toFixed(2)}</td>
+      <td>${ty.toFixed(2)}</td>
+      <td>${w.toFixed(2)}</td>
+      <td>${h.toFixed(2)}</td>
+    </tr>`;
+  });
+  html += '</table>';
+  document.getElementById('output').innerHTML = html;
+});
+</script>
+</body>
+</html>

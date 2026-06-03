@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/", "destination": "/3mensio-field-editor.html" }
+  ]
+}
