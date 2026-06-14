@@ -689,6 +689,19 @@ btnGenerate.addEventListener('click', async () => {
   const zip = new JSZip();
   let successCount = 0;
 
+  function buildOutName(origName) {
+    const base   = origName.replace(/\.pdf$/i, '');
+    const tokens = base.split('_');
+    if (tokens.length >= 5) {
+      const n = tokens.length;
+      tokens[n - 5] = physician;
+      tokens[n - 4] = hospital;
+      tokens[n - 3] = city;
+      tokens[n - 2] = country;
+    }
+    return tokens.join('_') + '_updated.pdf';
+  }
+
   for (let i = 0; i < uploadedFiles.length; i++) {
     const { file, buffer } = uploadedFiles[i];
     const safeId     = file.name.replace(/\W/g, '_');
@@ -698,8 +711,9 @@ btnGenerate.addEventListener('click', async () => {
 
     try {
       const pdfBytes = await processOnePdf(buffer, physician, hospital, city, country);
-      const outName  = file.name.replace(/\.pdf$/i, '') + '_updated.pdf';
+      const outName  = buildOutName(file.name);
       zip.file(outName, pdfBytes);
+      uploadedFiles[i].outName = outName;
       successCount++;
       if (statusSpan) { statusSpan.className = 'fi-status done'; statusSpan.textContent = '✓ Done'; }
     } catch (err) {
@@ -717,7 +731,7 @@ btnGenerate.addEventListener('click', async () => {
   // Single file → download as PDF directly; multiple files → ZIP
   try {
     if (uploadedFiles.length === 1) {
-      const singleName = uploadedFiles[0].file.name.replace(/\.pdf$/i, '') + '_updated.pdf';
+      const singleName = uploadedFiles[0].outName;
       const files = Object.keys(zip.files);
       const pdfData = await zip.files[files[0]].async('uint8array');
       const blob = new Blob([pdfData], { type: 'application/pdf' });
